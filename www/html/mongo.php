@@ -6,14 +6,46 @@ $music = new MongoCollection($db, "music");
 $mode = new MongoCollection($db, "mode");
 $score = new MongoCollection($db, "score");
 
+$CLOCK_RUNMODE = 1;
+$COUNTDOWN_RUNMODE = 2;
+$INTERVAL_RUNMODE = 3;
+$SCOREBOARD_RUNMODE = 4;
+$SYSMENU_RUNMODE = 5;
+$NONE_RUNMODE = 6;
+
+
 function getCurrentMode()
 {
 	global $mode;
+	global $CLOCK_RUNMODE;
+	global $COUNTDOWN_RUNMODE;
+	global $INTERVAL_RUNMODE;
+	global $SCOREBOARD_RUNMODE;
+	global $SYSMENU_RUNMODE;
+	global $NONE_RUNMODE;
 
 	$cMode = 'UNKNOWN';
 	$currentMode = $mode->findOne(array());
 	if ($currentMode) {
-		$cMode = $currentMode['current'];
+		$m = $currentMode['current'];
+		if ($m == $CLOCK_RUNMODE) {
+			$cMode = 'CLOCK';
+		}
+		if ($m == $COUNTDOWN_RUNMODE) {
+			$cMode = 'COUNTDOWN';
+		}
+		if ($m == $INTERVAL_RUNMODE) {
+			$cMode = 'INTERVAL';
+		}
+		if ($m == $SCOREBOARD_RUNMODE) {
+			$cMode = 'SCOREBOARD';
+		}
+		if ($m == $SYSMENU_RUNMODE) {
+			$cMode = 'SYSTEM MENU';
+		}
+		if ($m == $NONE_RUNMODE) {
+			$cMode = 'OFF';
+		}
 	}
 	return $cMode;
 }

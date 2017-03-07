@@ -13,14 +13,54 @@ import logging
 import pymongo
 import datetime
 import traceback
+import signal
 from time import gmtime, strftime
 from daemon import Daemon
 
 PIDFILE = '/var/run/heatbox.pid'
 LOGFILE = '/var/log/heatbox.log'
 
+CLOCK_RUNMODE = 1
+COUNTDOWN_RUNMODE = 2
+INTERVAL_RUNMODE = 3
+SCOREBOARD_RUNMODE = 4
+MENU_RUNMODE = 5
+SYSMENU_RUNMODE = 6
+VOLUME_RUNMODE = 7
+SHUTDOWN_RUNMODE = 8
+NONE_RUNMODE = 100
+
+VOLUME_SYSMENU_RUNMODE = 1
+SHUTDOWN_SYSMENU_RUNMODE = 2
+
+currentTimerD1 = " "
+currentTimerD2 = " "
+currentTimerD3 = " "
+currentTimerD4 = " "
+currentTimerState = -1
+countdownSeconds = -1
+countdownMinues = -1
+countdownSecondsLeft = -1
+
+currentDigit1 = ""
+currentDigit2 = ""
+currentDigit3 = ""
+currentDigit4 = ""
+
+currentRunmode = NONE_RUNMODE 
+currentMenuMode = -1
+prevMenuMode = -1
+currentSysMenuMode = -1
+prevSysMenuMode = -1
+inSysMenu = False
+
 logging.basicConfig(filename=LOGFILE,level=logging.DEBUG)
 exec(compile(source=open('variables.py').read(), filename='variables.py', mode='exec'))
+
+def signal_handler(signal, frame):
+	print('You pressed Ctrl+C!')
+	commandClear()
+	stopAll()
 
 def getColor(colorString):
 	c = colorString.split(",")
@@ -53,7 +93,9 @@ def startUp():
 		strip.begin()
 		strip.show()
 		startMe()
-	except:
+	except Exception as e:
+		print e
+		logging.exception("message")
 		commandClear()
 		stopAll()
 
@@ -190,6 +232,23 @@ def displayDigit4(strip, digit, digit2, digit3, digit4, color, duration):
 		clearMe(strip)
 
 def displayDigitNoPause(strip, digit, digit2, digit3, digit4, color):
+	global currentDigit1 
+	global currentDigit2
+	global currentDigit3
+	global currentDigit4
+
+	if currentDigit1 != digit:
+		clearDigit(strip, 1)
+		
+	if currentDigit2 != digit:
+		clearDigit(strip, 2)
+		
+	if currentDigit3 != digit:
+		clearDigit(strip, 3)
+		
+	if currentDigit4 != digit:
+		clearDigit(strip, 4)
+		
 	for d in digits[digit]:
 		for s in segments[d]:
 			strip.setPixelColor(s, color)
@@ -203,6 +262,11 @@ def displayDigitNoPause(strip, digit, digit2, digit3, digit4, color):
 	for d in digits[digit4]:
 		for s in segments[d]:
 			strip.setPixelColor(s + segmentOffset + offset, color)
+
+	currentDigit1 = digit
+	currentDigit2 = digit2
+	currentDigit3 = digit3
+	currentDigit4 = digit4
 	strip.show()
 
 def getCurrentTime():
@@ -223,24 +287,6 @@ def flashDigit4(strip, digit, digit2, digit3, digit4, color, color2, duration):
 	logging.debug("Clearing")
 	clearMe(strip)
 
-def blinkColonStop():
-	global blinkingColon
-	blinkingColon = False
-	
-
-def blinkColonStart(strip, color):
-	global blinkingColon
-	blinkingColon = True
-	while blinkingColon:
-		strip.setPixelColor(segmentOffset*2 + 0, color)
-		strip.setPixelColor(segmentOffset*2 + 1, color)
-		strip.show()
-		time.sleep(.5)
-		clearColon(strip)
-		strip.show()
-		time.sleep(.5)
-	clearColon(strip)
-	
 def clearColon(strip):
 	strip.setPixelColor(segmentOffset*2 + 0, off)
 	strip.setPixelColor(segmentOffset*2 + 1, off)
@@ -255,6 +301,22 @@ def clearMe(strip):
 
 def playSound(sound):
 	os.system("/usr/bin/mpc clear;/usr/bin/mpc add " + sound + ";/usr/bin/mpc play")
+def playEffect(sound):
+	os.popen("/usr/bin/mpg123 '/var/lib/mpd/music/" + sound + "' 2>&1").read()
+
+def getCurrentVolume():
+	x = list(os.popen('amixer sget Speaker | awk -F"[][]" \'/dB/ { print $2 }\' | head -1 | sed -e "s/\%//g"').read().rstrip())
+	if len(x) == 3:
+		return list([' ', x[0], x[1], x[2]])
+	elif len(x) == 2:
+		return list([' ', ' ', x[0], x[1]])
+	elif len(x) == 1:
+		return list([' ', ' ', ' ', x[0]])
+
+	return list([' ', ' ', ' ', ' '])
+
+def buzzer():
+	playSound("Buzzer1.mp3")
 
 def areyouready():
 	global countdownLightsActive
@@ -270,56 +332,267 @@ def areyouready():
 	clearMe(strip)
 	clearColon(strip)
 
+def shutdownStep():
+	clearMe(strip)
+	time.sleep(.5)
+	os.system("shutdown -h now")
+	return 0.1
+
+def volumeStep():
+	digits = getCurrentVolume()
+	displayDigit(strip, 0, digits[0], red)	
+	displayDigit(strip, 1, digits[1], red)
+	displayDigit(strip, 2, digits[2], red)
+	displayDigit(strip, 3, digits[3], red)
+	strip.show()
+	return 0.1
+
+def countdownStep():
+	global countdownActive
+	global countdownSeconds
+	global countdownMinutes
+	global countdownSecondsLeft
+	global currentRunmode
+
+	if countdownActive:
+		digitsOne = ""
+		digitsTwo = ""
+		minutesLeft = countdownSecondsLeft/60
+		if minutesLeft < 10:
+			digitsOne = " " + str(minutesLeft)	
+		else:
+			digitsOne = str(minutesLeft)
+		secLeft = countdownSecondsLeft - minutesLeft*60	
+		if secLeft < 10:
+			digitsTwo = "0" + str(secLeft)
+		else:
+			digitsTwo = str(secLeft)
+		digits = digitsOne + digitsTwo
+		l = list(digits)
+		for dig in range(4):
+			displayDigit(strip, dig, l[dig], red)	
+
+		color = red
+		strip.setPixelColor(segmentOffset*2 + 0, color)
+		strip.setPixelColor(segmentOffset*2 + 1, color)
+		strip.show()
+		time.sleep(.5)
+		color = off
+		strip.setPixelColor(segmentOffset*2 + 0, color)
+		strip.setPixelColor(segmentOffset*2 + 1, color)
+		strip.show()
+		time.sleep(.5)
+		countdownSecondsLeft = countdownSecondsLeft - 1
+
+		if countdownSecondsLeft <= 0:
+			buzzer()
+			displayDigit4(strip, ' ', '0', '0', '0', red, 2)
+			clearMe(strip)
+			countdownActive = False
+			currentRunmode = NONE_RUNMODE
+	return 0.0
+
 def doCountDown(minutes, seconds):
 	global strip
 	global countdownActive
-	global blinkingColon
+	global countdownSeconds
+	global countdownMinutes
+	global countdownSecondsLeft
+	global currentRunmode
 
-	totalSeconds = minutes*60 + seconds
-
+	countdownSecondsLeft = minutes*60 + seconds
+	countdownMinutes = minutes
+	countdownSeconds = seconds
+	currentRunmode = COUNTDOWN_RUNMODE
 	countdownActive = True
-	secondsLeft = totalSeconds
-	while countdownActive:
-		if secondsLeft <= 0:
-			areyouready()
-			clearMe(strip)
-			countdownActive = False
-			blinkColonStop()
+	
+
+def getCurrentScore():
+	global mongodb
+	currentScore = mongodb.score.find_one({})
+	if bool(currentScore):
+		homeScore = str(currentScore["home"])
+		awayScore = str(currentScore["away"])
+		homeColor = currentScore["homeColor"]
+		awayColor = currentScore["awayColor"]
+		return list([homeScore, awayScore, homeColor, awayColor])
+
+	return list()
+
+def increaseScore(homeFlag):
+	global mongodb
+	currentScore = getCurrentScore()
+	logging.debug("Increasing score...");
+	if len(currentScore) > 0:
+		which = 'away'
+		if homeFlag:
+			which = 'home'
+			score = currentScore[0]
 		else:
-			digitsOne = ""
-			digitsTwo = ""
-			minutesLeft = secondsLeft/60
-			if minutesLeft < 10:
-				digitsOne = " " + str(minutesLeft)	
-			else:
-				digitsOne = str(minutesLeft)
-			secLeft = secondsLeft - minutesLeft*60	
-			if secLeft < 10:
-				digitsTwo = "0" + str(secLeft)
-			else:
-				digitsTwo = str(secLeft)
-			digits = digitsOne + digitsTwo
-			l = list(digits)
-			for dig in range(4):
-				displayDigit(strip, dig, l[dig], red)	
+			score = currentScore[1]
+
+		logging.debug(which + "-" + score)
+
+		if int(score) < 99:
+			newscore = int(score) + 1
+			logging.debug("Updating score to be " + str(newscore))
+			ret = mongodb.score.update({}, {'$set' : {which : newscore}})
+			logging.debug(ret)
+def decreaseScore(homeFlag):
+	global mongodb
+	currentScore = getCurrentScore()
+	logging.debug("Increasing score...");
+	if len(currentScore) > 0:
+		which = 'away'
+		if homeFlag:
+			which = 'home'
+			score = currentScore[0]
+		else:
+			score = currentScore[1]
+
+		logging.debug(which + "-" + score)
+		if int(score) > 0:
+			newscore = int(score) - 1
+			mongodb.score.update({}, {'$set' : {which : newscore}})
+			
+	
+# Step functions
+def scoreboardStep():
+	global mongodb
+	currentScore = getCurrentScore()
+	if len(currentScore) > 0:
+		homeScore = currentScore[0]
+		awayScore = currentScore[1]
+		homeColor = currentScore[2]
+		awayColor = currentScore[3]
+
+		if len(homeScore) == 1:
+			homeScore = " " + homeScore
+		
+		if len(awayScore) == 1:
+			awayScore = " " + awayScore
+
+		totalScore = homeScore + awayScore
+		l = list(totalScore)
+		displayDigit(strip, 0, l[0], getColor(homeColor))	
+		displayDigit(strip, 1, l[1], getColor(homeColor))	
+		displayDigit(strip, 2, l[2], getColor(awayColor))	
+		displayDigit(strip, 3, l[3], getColor(awayColor))	
 		strip.show()
-		time.sleep(1)
-		secondsLeft = secondsLeft - 1
-	clearMe(strip)
+	return 0.1
 
-def doStartClock(string):
-	global clockRunning
+def menuStep():
+	global mongodb
+	global currentMenuMode
+	global prevMenuMode
 
-	clockRunning = True
-	while clockRunning:
+	currentMode = mongodb.mode.find_one({})
+	if bool(currentMode):
+		mode = int(currentMode["current"])
+
+		updateDisplay = False
+
+		if currentMenuMode == -1:
+			clearMe(strip)
+			updateDisplay = True
+			currentMenuMode = CLOCK_RUNMODE
+			prevMenuMode = currentMenuMode
+		
+		if currentMenuMode != prevMenuMode:
+			updateDisplay = True
+			prevMenuMode = currentMenuMode
+	
+		
+		c = [' ', ' ', ' ', ' ']
+		if currentMenuMode == CLOCK_RUNMODE:
+			c = ['C', 'L', 'O', 'C']
+		if currentMenuMode == COUNTDOWN_RUNMODE:
+			c = ['T', 'I', 'M', 'R']
+		if currentMenuMode == INTERVAL_RUNMODE:
+			c = ['I', 'N', 'T', 'R']
+		if currentMenuMode == SCOREBOARD_RUNMODE:
+			c = ['S', 'C', 'O', 'R']
+		if currentMenuMode == MENU_RUNMODE:
+			c = ['M', 'E', 'N', 'U']
+		if currentMenuMode == SYSMENU_RUNMODE:
+			c = ['S', 'Y', 'S', 'T']
+		if currentMenuMode == NONE_RUNMODE:
+			c = [' ', ' ', ' ', ' ']
+		
+		if updateDisplay:
+			clearMe(strip)
+			displayDigit(strip, 0, c[0], red)	
+			displayDigit(strip, 1, c[1], red)
+			displayDigit(strip, 2, c[2], red)
+			displayDigit(strip, 3, c[3], red)
+			strip.show()
+	return 0.1
+
+def clockStep():
+	for i in range(2):
 		c = list(datetime.datetime.now().strftime("%I%M"))
 		if c[0] == "0":
 			c[0] = " "
 		for dig in range(4):
 			logging.debug(c[dig])
 			displayDigit(strip, dig, c[dig], red)	
+
+		color = red
+		if i == 1:
+			color = off
+
+		strip.setPixelColor(segmentOffset*2 + 0, color)
+		strip.setPixelColor(segmentOffset*2 + 1, color)
 		strip.show()
-		time.sleep(1)
+		time.sleep(.5)
+
+	return 0.5
+
+def intervalStep():
+	return 0.5
+def sysMenuStep():
+	global mongodb
+	global currentSysMenuMode
+	global prevSysMenuMode
+
+	currentMode = mongodb.mode.find_one({})
+	if bool(currentMode):
+		mode = int(currentMode["current"])
+
+		updateDisplay = False
+
+		if currentSysMenuMode == -1:
+			clearMe(strip)
+			updateDisplay = True
+			currentSysMenuMode = VOLUME_SYSMENU_RUNMODE
+			prevSysMenuMode = currentSysMenuMode
+		
+		if currentSysMenuMode != prevSysMenuMode:
+			updateDisplay = True
+			prevSysMenuMode = currentSysMenuMode
+	
+		
+		c = [' ', ' ', ' ', ' ']
+		if currentSysMenuMode == VOLUME_SYSMENU_RUNMODE:
+			c = ['V', 'O', 'L', ' ']
+		if currentSysMenuMode == SHUTDOWN_SYSMENU_RUNMODE:
+			c = ['S', 'H', 'U', 'T']
+		
+		if updateDisplay:
+			clearMe(strip)
+			displayDigit(strip, 0, c[0], red)	
+			displayDigit(strip, 1, c[1], red)
+			displayDigit(strip, 2, c[2], red)
+			displayDigit(strip, 3, c[3], red)
+			strip.show()
+	return 0.1
+
+def doStartClock(string):
+	global clockRunning
+
+	clockRunning = True
+	while clockRunning:
+		clockStep()
 	clearMe(strip)
 
 def doStrandtest(strip):
@@ -361,29 +634,24 @@ def modeMonitor():
 	modeMonitorActive = True 
 	while(modeMonitorActive):
 		doc = mongodb.mode.find_one({})
+		sleepTime = .50
 		if bool(doc):
 			currentMode = doc["current"]
-			if currentMode == "SCOREBOARD":
-				currentScore = mongodb.score.find_one({})
-				if bool(currentScore):
-					homeScore = str(currentScore["home"])
-					awayScore = str(currentScore["away"])
-					homeColor = currentScore["homeColor"]
-					awayColor = currentScore["awayColor"]
-					if len(homeScore) == 1:
-						homeScore = " " + homeScore
-					
-					if len(awayScore) == 1:
-						awayScore = " " + awayScore
-
-					totalScore = homeScore + awayScore
-					l = list(totalScore)
-					displayDigit(strip, 0, l[0], getColor(homeColor))	
-					displayDigit(strip, 1, l[1], getColor(homeColor))	
-					displayDigit(strip, 2, l[2], getColor(awayColor))	
-					displayDigit(strip, 3, l[3], getColor(awayColor))	
-					strip.show()
-		time.sleep(.50)
+			if currentMode == SCOREBOARD_RUNMODE:
+				sleepTime = scoreboardStep()
+			if currentMode == CLOCK_RUNMODE:
+				sleepTime = clockStep()
+			if currentMode == COUNTDOWN_RUNMODE:
+				sleepTime = countdownStep()
+			if currentMode == INTERVAL_RUNMODE:
+				sleepTime = intervalStep()
+			if currentMode == MENU_RUNMODE:
+				sleepTime = menuStep()
+			if currentMode == VOLUME_RUNMODE:
+				sleepTime = volumeStep()
+			if currentMode == SYSMENU_RUNMODE:
+				sleepTime = sysMenuStep()
+		time.sleep(sleepTime)
 	clearMe(strip)
 	clearColon(strip)
 	logging.debug("Done with mode monitor")
@@ -392,10 +660,11 @@ def stopAll():
 	global modeMonitorActive
 	
 	modeMonitorActive = False
+	updateMode(NONE_RUNMODE)
 	
 def turnoff():
 	commandClear()
-	updateMode('OFF')
+	updateMode(NONE_RUNMODE)
 
 def commandClear():
 	global countdownLightsActive
@@ -415,9 +684,190 @@ def commandStrandtest():
 	thread.start()
 
 def startupDisplay():
-	playSound("PlayBall.mp3")
+	playEffect("PlayBall.mp3")
 	flashDigit4(strip, "H", "E", "A", "T", red,orange, 3)
 	displayDigit4(strip, "H", "E", "A", "T", red,1)
+
+def processCountdownKeyPress(key):
+	global countdownActive
+	global currentTimerD1
+	global currentTimerD2
+	global currentTimerD3
+	global currentTimerD4
+	global currentTimerState
+	global strip
+
+	if countdownActive != True:
+		logging.debug("CurrentTimerState: " + str(currentTimerState))
+
+		if currentTimerState == -1:
+			currentTimerD1 = " "
+			currentTimerD2 = " "
+			currentTimerD3 = " "
+			currentTimerD4 = key
+		elif currentTimerState == 0:
+			currentTimerD3 = currentTimerD4
+			currentTimerD4 = key
+		elif currentTimerState == 1:
+			currentTimerD2 = currentTimerD3
+			currentTimerD3 = currentTimerD4
+			currentTimerD4 = key
+		elif currentTimerState == 2:
+			currentTimerD1 = currentTimerD2
+			currentTimerD2 = currentTimerD3
+			currentTimerD3 = currentTimerD4
+			currentTimerD4 = key
+
+		if currentTimerState == 3:
+			currentTimerState = -1
+		else:
+			currentTimerState = currentTimerState + 1
+
+		logging.debug("TIME: " + currentTimerD1 + currentTimerD2 + currentTimerD3 + currentTimerD4)
+		displayDigit(strip, 0, currentTimerD1, red)	
+		displayDigit(strip, 1, currentTimerD2, red)	
+		displayDigit(strip, 2, currentTimerD3, red)	
+		displayDigit(strip, 3, currentTimerD4, red)	
+		strip.show()
+
+def handleKeypress(key):
+	global currentRunmode
+	global currentMenuMode
+	global currentSysMenuMode
+	global prevMenuMode
+	global countdownActive
+	global currentTimerD1
+	global currentTimerD2
+	global currentTimerD3
+	global currentTimerD4
+	global currentTimerState
+	global countdownSeconds
+	global countdownMinutes
+	global countdownSecondsLeft
+
+	if key == "A":
+		logging.debug("Current Mode: " + str(currentRunmode) + " : " + str(MENU_RUNMODE))
+		logging.debug("Current SysMode: " + str(currentSysMenuMode))
+		logging.debug("Current MenuMode: " + str(currentMenuMode))
+		if currentRunmode == MENU_RUNMODE:
+			if currentMenuMode == CLOCK_RUNMODE:
+				currentMenuMode = COUNTDOWN_RUNMODE
+			elif currentMenuMode == COUNTDOWN_RUNMODE:
+				currentMenuMode = INTERVAL_RUNMODE
+			elif currentMenuMode == INTERVAL_RUNMODE:
+				currentMenuMode = SCOREBOARD_RUNMODE
+			elif currentMenuMode == SCOREBOARD_RUNMODE:
+				currentMenuMode = SYSMENU_RUNMODE
+				currentSysMenuMode = -1
+			elif currentMenuMode == MENU_RUNMODE:
+				currentMenuMode = MENU_RUNMODE
+			elif currentMenuMode == SYSMENU_RUNMODE:
+				currentMenuMode = CLOCK_RUNMODE	
+			elif currentMenuMode == NONE_RUNMODE:
+				currentMenuMode = NONE_RUNMODE
+			else:
+				currentMenuMode = NONE_RUNMODE
+		elif currentRunmode == SYSMENU_RUNMODE:
+			if currentSysMenuMode == VOLUME_SYSMENU_RUNMODE:
+				currentSysMenuMode = SHUTDOWN_SYSMENU_RUNMODE
+			elif currentSysMenuMode == SHUTDOWN_SYSMENU_RUNMODE:
+				currentSysMenuMode = VOLUME_SYSMENU_RUNMODE
+			elif currentSysMenuMode == -1:
+				currentMenuMode = CLOCK_RUNMODE	
+		else:
+			logging.debug("A")
+			updateMode(MENU_RUNMODE)
+			currentRunmode = MENU_RUNMODE
+			currentMenuMode = CLOCK_RUNMODE
+			prevMenuMode = -1
+
+	if key == "B":
+		if currentRunmode == VOLUME_RUNMODE:
+			os.popen("/usr/bin/amixer set Speaker 5%+ 2>&1 > /dev/null").read()
+		if currentRunmode == SCOREBOARD_RUNMODE:
+			increaseScore(False)
+	if key == "C":
+		if currentRunmode == VOLUME_RUNMODE:
+			os.popen("/usr/bin/amixer set Speaker 5%- 2>&1 > /dev/null").read()
+		if currentRunmode == SCOREBOARD_RUNMODE:
+			decreaseScore(False)
+	if key == "1":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+	if key == "2":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+	if key == "3":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+	if key == "4":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+		if currentRunmode == SCOREBOARD_RUNMODE:
+			increaseScore(True)
+	if key == "5":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+	if key == "6":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+	if key == "7":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+		if currentRunmode == SCOREBOARD_RUNMODE:
+			decreaseScore(True)
+	if key == "8":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+	if key == "9":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+	if key == "0":
+		if currentRunmode == COUNTDOWN_RUNMODE:
+			processCountdownKeyPress(key)
+
+	if key == "#":
+		if currentRunmode == MENU_RUNMODE:
+			updateMode(currentMenuMode)
+			currentRunmode = currentMenuMode
+		elif currentRunmode == COUNTDOWN_RUNMODE:
+			updateMode(currentMenuMode)
+			currentRunmode = currentMenuMode
+			if countdownActive != True:
+				d1 = currentTimerD1
+				d2 = currentTimerD2
+				d3 = currentTimerD3
+				d4 = currentTimerD4
+				if d1 == ' ':
+					d1 = '0'
+				if d2 == ' ':
+					d2 = '0'
+				if d3 == ' ':
+					d3 = '0'
+				if d4 == ' ':
+					d4 = '0'
+
+				minutes = int(d1)*10 + int(d2)
+				seconds = int(d3)*10 + int(currentTimerD4)
+				countdownSecondsLeft = minutes*60 + seconds
+				countdownMinutes = minutes
+				countdownSeconds = seconds
+				countdownActive = True
+		elif currentRunmode == SYSMENU_RUNMODE:
+			if currentSysMenuMode == VOLUME_SYSMENU_RUNMODE:
+				currentRunmode = VOLUME_RUNMODE
+				updateMode(currentRunmode)
+			elif currentSysMenuMode == SHUTDOWN_SYSMENU_RUNMODE:
+				currentRunmode = NONE_RUNMODE
+				updateMode(currentRunmode)
+				shutdownStep()
+		clearMe(strip)
+	
+	if key == "*":
+		currentRunmode = NONE_RUNMODE
+		updateMode(currentRunmode)
+		countdownActive = False
+		clearMe(strip)
 
 def startMe():
 	global strip
@@ -429,8 +879,8 @@ def startMe():
 	thread.start()
 
 	logging.debug('Started...');
-	pipein = open(pipe_name, 'r')
 	try:
+		pipein = open(pipe_name, 'r')
 		while True:
 			line = pipein.readline()[:-1]
 			if line != "":
@@ -447,15 +897,10 @@ def startMe():
 				if command == "countDown":
 					minutes = int(parms[1])
 					seconds = int(parms[2])
-					thread = Thread(target = doCountDown, args = (minutes,seconds))
-					thread.start()
-					thread2 = Thread(target = blinkColonStart, args = (strip, red))
-					thread2.start()
+					doCountDown(minutes, seconds)
 				if command == "startclock":
 					thread = Thread(target = doStartClock, args = (strip,))
 					thread.start()
-					thread2 = Thread(target = blinkColonStart, args = (strip, red))
-					thread2.start()
 				if command == "stopclock":
 					global clockRunning
 					global blinkingColon
@@ -472,7 +917,9 @@ def startMe():
 				if command == "shutdown":
 					os.system("shutdown -h now")
 				if command == "keypress":
-					playSound("click2.mp3")
+					keypressed = parms[1]
+					handleKeypress(keypressed)
+					playEffect("click2.mp3")
 				if command == "hotspotup":
 					os.system("ifdown eth0;ifup wlan1")
 				if command == "hotspotdown":
@@ -482,6 +929,7 @@ def startMe():
 				time.sleep(.10)
 	except KeyboardInterrupt:
 		commandClear()
+		stopAll()
 
 
 if __name__ == "__main__":
