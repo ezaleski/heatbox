@@ -12,6 +12,7 @@ $( document ).ready(function() {
         </div>
 <?php require_once('mode.php'); ?>
 	<ul id="homescreen" data-role="listview">
+		<li><a rel="external" href="display.php">Display</a></li>
 		<li><a rel="external" href="manualentry.php">Manual Entry</a></li>
 		<li><a rel="external" href="scoreboard.php">Scoreboard</a></li>
 		<li><a rel="external" href="intervals.php">Intervals</a></li>

@@ -1,6 +1,11 @@
 <?php
 require_once('header.php');
 ?>
+<style>
+pre {
+	font-size: 30px;
+}
+</style>
 <script type="text/javascript" src="segment-display.js"></script>
 <script type="text/javascript">
 var display = new SegmentDisplay("display");
@@ -100,9 +105,20 @@ function reconnect() {
 function log(msg){ $("#log").innerHTML+="<br>"+msg; }
 function onkey(event){ if(event.keyCode==13){ send(); } }
 
+function openMe(url)
+{
+        $.get(url, function( data ) {
+                window.location.reload();
+        });
+}
+
 $(document).ready(function() {
 	animate();
 	reconnect();
+	$(".button").button();
+	$("#pauseInterval").on('vclick', function () {
+                openMe('api.php?action=keypress&value=5');
+        });
 });
 </script>
 <div data-role="page">
@@ -112,9 +128,12 @@ $(document).ready(function() {
         </div>
 <?php require_once('mode.php'); ?>
 	<div style="padding: 20px;">
-		<center><canvas id="display" width="320" height="204"></canvas></center>
+		<center><canvas id="display" width="320" height="150"></canvas></center>
 	</div>
 	<div style="padding: 20px;">
-		<center><div width=320 height=204 id="lcd"></div></center>
+		<center><div id="lcd" style="background-color:#ebebeb;width: 325;height: 130;border: 1px solid black;"></div></center>
 	</div>
+	<div style="padding: 20px;">
+                <center><a class="button" id=pauseInterval>Pause Interval</a></center>
+        </div>
 </div>

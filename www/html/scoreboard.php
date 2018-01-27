@@ -22,7 +22,10 @@ if ($scoreObj) {
 function openMe(url)
 {
 	$.get(url, function( data ) {
-		window.location.reload();
+		var homeScore = data.data["home"];
+		var awayScore = data.data["away"];
+		$("#homeScore").html(homeScore);
+		$("#awayScore").html(awayScore);
 	});
 }
 $( document ).ready(function() {
@@ -76,12 +79,14 @@ $( document ).ready(function() {
 		<div class="ui-block-a">
 			<center>
 				<h2>HOME</h2>
-				<font style="font-size: 150;line-height: 1.0 !important;"><?php print $homeScore;?></font><br>
-				<div style="padding: 20px;">
+				<div style="padding: 10px;">
 					<a class="button" id=homeUpButton >Up</a></br></br>
+				</div>
+				<font style="font-size: 150;line-height: 1.0 !important;"><span id="homeScore"><?php print $homeScore;?></span></font><br>
+				<div style="padding: 10px;">
 					<a class="button" id=homeDownButton >Down</a>
 				</div>
-				<div style="padding: 20px;">
+				<div style="padding: 10px;">
 					<input type='none' id="homeColor" />
 				</div>
 			</center>
@@ -89,12 +94,14 @@ $( document ).ready(function() {
 		<div class="ui-block-b">
 			<center>
 				<h2>AWAY</h2>
-				<font style="font-size: 150;line-height: 1.0 !important;"><?php print $awayScore;?></font><br>
-				<div style="padding: 20px;">
+				<div style="padding: 10px;">
 					<a class="button" id=awayUpButton >Up</a></br></br>
+				</div>
+				<font style="font-size: 150;line-height: 1.0 !important;"><span id="awayScore"><?php print $awayScore;?></span></font><br>
+				<div style="padding: 10px;">
 					<a class="button" id=awayDownButton >Down</a>
 				</div>
-				<div style="padding: 20px;">
+				<div style="padding: 10px;">
 					<input type='none' id="awayColor" />
 				</div>
 			</center>
@@ -106,3 +113,4 @@ $( document ).ready(function() {
 	</div>
 	</center>
 </div>
+<div class="keyboard" style="height: 0">&nbsp;</div>

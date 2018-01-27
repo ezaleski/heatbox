@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="jquery-ui-1.12.1.custom/jquery-ui.min.css">
 <link rel="stylesheet" href="spectrum.css">
 <script src="jquery-1.9.1.min.js"></script>
+<script src="jquery.maskedinput.js"></script>
 <script language="text/javascript">
       $(document).bind("mobileinit", function () {
             $.mobile.ajaxEnabled = false;

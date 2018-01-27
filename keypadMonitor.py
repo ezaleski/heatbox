@@ -50,6 +50,7 @@ def startUp():
 					pass
 
 			    GPIO.output(COL[j],1)
+			time.sleep(0.1)
 	except KeyboardInterrupt:
 	    GPIO.cleanup()
 
@@ -58,7 +59,7 @@ if __name__ == "__main__":
                 if 'start' == sys.argv[1]:
                         print "Starting ..."
                         sys.stdout.flush()
-                        os.system("nohup /root/heatbox/keypadMonitor.py daemon & >/dev/null 2>&1")
+                        os.system("nohup /root/heatbox/keypadMonitor.py daemon & >/var/log/keypadMonitor.log 2>&1")
                 elif 'daemon' == sys.argv[1]:
                         startUp()
 

@@ -1,10 +1,13 @@
 <?php
 require_once("mongo.php");
 $action = $_GET['action'];
+if (!isset($action)) {
+	$action = $_POST['action'];
+}
 $value = $_GET['value'];
 $sharedPipe = "/tmp/heatbox_pipe";
-$scoreboardMode = "SCOREBOARD";
-$intervalMode = "INTERVALS";
+$scoreboardMode = 4;
+$intervalMode = 9;
 
 $ret = array('ret' => 1, 'message' => 'OK');
 
@@ -64,6 +67,11 @@ if ($action == "shutdown") {
 	fwrite($out,"shutdown,".$value."\n");
 	fclose($out);
 }
+if ($action == "keypress") {
+	$out = fopen($sharedPipe,"a");
+	fwrite($out,"keypress,".$value."\n");
+	fclose($out);
+}
 if ($action == "music") {
 	$handled = false;
 	if ($value == "stop") {
@@ -95,26 +103,69 @@ if ($action == "homeColor") {
 if ($action == "homeUp") {
 	setCurrentMode($scoreboardMode);
 	updateScore(true, intval($value));
+	$ret['data'] = getScore();	
+}
+if ($action == "homeSpecific") {
+	setCurrentMode($scoreboardMode);
+	updateScoreSpecific(true, intval($value));
+	$ret['data'] = getScore();	
 }
 if ($action == "homeDown") {
 	setCurrentMode($scoreboardMode);
 	updateScore(true, -intval($value));
+	$ret['data'] = getScore();	
 }
 if ($action == "awayColor") {
 	setCurrentMode($scoreboardMode);
 	updateScoreColor(false, $value);
 }
+if ($action == "awaySpecific") {
+	setCurrentMode($scoreboardMode);
+	updateScoreSpecific(false, intval($value));
+	$ret['data'] = getScore();	
+}
 if ($action == "awayUp") {
 	setCurrentMode($scoreboardMode);
 	updateScore(false, intval($value));
+	$ret['data'] = getScore();	
 }
 if ($action == "awayDown") {
 	setCurrentMode($scoreboardMode);
 	updateScore(false, -intval($value));
+	$ret['data'] = getScore();	
 }
 if ($action == "resetScore") {
 	setCurrentMode($scoreboardMode);
 	resetScore();
+	$ret['data'] = getScore();	
+}
+if ($action == "startInterval") {
+	setCurrentMode($intervalMode);
+	$intervalId = $_GET['intervalId'];
+	updateIntervalState($intervalId, "running");
+}
+if ($action == "getSounds") {
+	$data = getSounds();
+	$ret['data'] = $data;	
+}
+if ($action == "deleteInterval") {
+	$intervalId = $_GET['intervalId'];
+	if (isset($intervalId)) {
+		deleteInterval($intervalId);
+	}
+}
+if ($action == "saveInterval") {
+	$data = $_POST['intervalData'];
+	$obj = json_decode($data);
+
+	if (isset($_POST['intervalId'])) {
+		$intervalId = $_POST['intervalId'];
+		updateInterval($intervalId, $obj);
+	}
+	else {
+		addInterval($obj);
+	}
+	$ret['data'] = $obj;
 }
 
 header('Content-Type: application/json');

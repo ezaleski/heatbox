@@ -1,6 +1,7 @@
 <div data-role="header">
   <div data-role="navbar">
     <ul>
+      <li><a href="display.php">Display</a></li>
       <li><a href="manualentry.php">Manual Entry</a></li>
       <li><a href="scoreboard.php">Scoreboard</a></li>
       <li><a href="intervals.php">Intervals</a></li>
